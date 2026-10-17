@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кадр</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root { color-scheme: dark; --bg: #17212b; --text: #fff; --muted: #8b9bb0; --card: #1e2c3a; --field: #0e1621; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 -apple-system, "Segoe UI", sans-serif; }
+  main { padding: 16px 16px 28px; max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 8px 0 12px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  .card { background: var(--card); border-radius: 16px; overflow: hidden; margin-bottom: 18px; }
+  .pad { padding: 12px 14px 0; }
+  .site { color: #7f91a4; font-size: 13px; }
+  .title { font-weight: 700; font-size: 17px; margin-top: 2px; }
+  .desc { color: var(--muted); font-size: 15px; margin: 4px 0 10px; }
+  .media { background: #000; min-height: 120px; }
+  .media img, .media video { width: 100%; display: block; max-height: 280px; object-fit: cover; background: #000; }
+  .caption { padding: 10px 14px 0; white-space: pre-wrap; }
+  .fake { margin: 12px 14px 14px; background: #2ea043; color: #fff; text-align: center; border-radius: 10px; padding: 10px; font-weight: 700; }
+  label { display: block; margin: 12px 0 6px; color: var(--muted); font-size: 14px; }
+  input, textarea, button { width: 100%; border: 0; border-radius: 12px; padding: 12px; font: inherit; color: var(--text); background: var(--field); }
+  textarea { min-height: 64px; resize: vertical; }
+  button { background: #2ea043; font-weight: 700; margin-top: 8px; }
+  #hint { min-height: 1.4em; color: #ffb4b4; }
+</style>
+</head>
+<body>
+<main id="home">
+  <h1>Кадр</h1>
+  <p>Пришлите боту картинку или видео, затем нажмите «Собрать в окне» внизу чата.</p>
+  <button id="pick" type="button">Выбрать готовую карточку</button>
+</main>
+<main id="composer" hidden>
+  <div class="card">
+    <div class="pad">
+      <div class="site">kadr.app</div>
+      <div class="title" id="previewTitle">Кадр</div>
+      <div class="desc" id="previewDesc">Нажмите, чтобы установить</div>
+    </div>
+    <div class="media" id="media"></div>
+    <div class="caption" id="previewCaption"></div>
+    <div class="fake">Установить</div>
+  </div>
+  <label for="url">Ссылка</label>
+  <input id="url" inputmode="url" autocomplete="off" placeholder="https://">
+  <label for="title">Название</label>
+  <input id="title" maxlength="120" placeholder="Кадр">
+  <label for="description">Описание</label>
+  <textarea id="description" maxlength="200" placeholder="Нажмите, чтобы установить"></textarea>
+  <label for="display">Текст под карточкой</label>
+  <textarea id="display" maxlength="1000" placeholder="Можно оставить пустым"></textarea>
+  <p id="hint"></p>
+</main>
+<script>
+(function () {
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if (!tg) {
+    document.body.textContent = "Откройте это окно из Telegram.";
+    return;
+  }
+  tg.ready();
+  tg.expand();
+  var params = new URLSearchParams(location.search);
+  var draft = params.get("draft") || "";
+  var home = document.getElementById("home");
+  var composer = document.getElementById("composer");
+  var hint = document.getElementById("hint");
+  var url = document.getElementById("url");
+  var title = document.getElementById("title");
+  var description = document.getElementById("description");
+  var display = document.getElementById("display");
+  var sent = false;
+
+  document.getElementById("pick").onclick = function () {
+    tg.switchInlineQuery("", ["users", "groups", "channels"]);
+  };
+
+  function showHome(message) {
+    home.hidden = false;
+    composer.hidden = true;
+    if (message) {
+      home.querySelector("p").textContent = message;
+    }
+  }
+
+  function paint() {
+    document.getElementById("previewTitle").textContent = title.value.trim() || "Кадр";
+    document.getElementById("previewDesc").textContent = description.value.trim() || "Нажмите, чтобы установить";
+    document.getElementById("previewCaption").textContent = display.value.trim();
+  }
+
+  function own(value) {
+    try {
+      var parsed = new URL(value, location.href);
+      if (parsed.origin !== location.origin) return "";
+      return parsed.href;
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function showComposer(info) {
+    home.hidden = true;
+    composer.hidden = false;
+    var image = own(info.image || "");
+    var video = own(info.video || "");
+    var media = document.getElementById("media");
+    media.replaceChildren();
+    if (video) {
+      var player = document.createElement("video");
+      player.src = video;
+      player.poster = image;
+      player.controls = true;
+      player.playsInline = true;
+      player.muted = true;
+      media.appendChild(player);
+    } else if (image) {
+      var picture = document.createElement("img");
+      picture.src = image;
+      picture.alt = "";
+      media.appendChild(picture);
+    }
+    var preset = params.get("url") || "";
+    if (/^https?:\/\//i.test(preset)) url.value = preset;
+    ["input", "change"].forEach(function (name) {
+      title.addEventListener(name, paint);
+      description.addEventListener(name, paint);
+      display.addEventListener(name, paint);
+    });
+    paint();
+    tg.MainButton.setText("Готово");
+    tg.MainButton.show();
+    tg.MainButton.onClick(submit);
+  }
+
+  function submit() {
+    if (sent) return;
+    var link = url.value.trim();
+    if (!/^https?:\/\//i.test(link)) {
+      hint.textContent = "Нужна ссылка, которая начинается с https://";
+      return;
+    }
+    sent = true;
+    tg.MainButton.showProgress();
+    try {
+      tg.sendData(JSON.stringify({
+        id: draft,
+        url: link,
+        title: title.value.trim(),
+        description: description.value.trim(),
+        display: display.value.trim()
+      }));
+    } catch (error) {
+      sent = false;
+      tg.MainButton.hideProgress();
+      hint.textContent = "Откройте это окно кнопкой «Собрать в окне» внизу чата с ботом.";
+    }
+    setTimeout(function () {
+      if (!sent) return;
+      hint.textContent = "Если окно не закрылось, откройте его кнопкой «Собрать в окне» внизу чата.";
+      sent = false;
+      tg.MainButton.hideProgress();
+    }, 1500);
+  }
+
+  if (!/^[0-9a-f]{16}$/.test(draft)) {
+    showHome();
+    return;
+  }
+  fetch("../d/" + draft + ".json", { cache: "no-store" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("draft");
+      return response.json();
+    })
+    .then(showComposer)
+    .catch(function () {
+      showHome("Обложка ещё не открылась. Закройте окно и нажмите «Собрать в окне» ещё раз.");
+    });
+})();
+</script>
+</body>
+</html>
